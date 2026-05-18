@@ -72,6 +72,9 @@ class Player:
                 os.unlink(self.socket_path)
             except OSError:
                 pass
+        # start_new_session detaches mpv into its own session/process
+        # group so it survives SIGHUP when the TUI (or its tmux pane)
+        # exits - this is what keeps the audio playing after 'q'.
         subprocess.Popen(
             [
                 "mpv",
@@ -83,6 +86,8 @@ class Player:
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
         )
         # Wait (up to ~5s) for the socket to become available.
         for _ in range(50):
