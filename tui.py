@@ -50,6 +50,7 @@ class TUI:
         self.quit_audio = False     # set by 'Q' to also stop the audio
 
         self._status = {}           # latest playback snapshot
+        self.downloads = {}         # track_id -> percent downloaded
         self._last_reconnect = 0.0
 
         # Wire the player callbacks back into the TUI / library.
@@ -220,6 +221,9 @@ class TUI:
             if i == self.selection:
                 attr = curses.color_pair(2)
             self._addstr(y, 0, text.ljust(w - 1), attr)
+            badge = row.get("badge")
+            if badge:
+                self._addstr(y, w - len(badge) - 1, badge, attr)
 
     def _draw_bottombar(self, h, w):
         # Status message (auto-expires after a few seconds).
@@ -255,6 +259,7 @@ class TUI:
                 rows.append({
                     "text": "  [%-6s] %s" % (tag, t["title"]),
                     "track": t, "queue": tracks, "playlist": None,
+                    "badge": self._download_badge(t),
                 })
         elif self.view == VIEW_PLAYLISTS:
             for name in sorted(self.lib.playlists):
@@ -269,17 +274,27 @@ class TUI:
                         rows.append({
                             "text": "      %s" % t["title"],
                             "track": t, "queue": tracks, "playlist": name,
+                            "badge": self._download_badge(t),
                         })
         elif self.view == VIEW_HISTORY:
             for h in self.lib.history:
                 stamp = time.strftime(
                     "%Y-%m-%d %H:%M", time.localtime(h["played_at"]))
+                track = self.lib.get_track(h["track_id"])
                 rows.append({
                     "text": "  %s  %s" % (stamp, h["title"]),
-                    "track": self.lib.get_track(h["track_id"]),
+                    "track": track,
                     "queue": self.lib.tracks, "playlist": None,
+                    "badge": self._download_badge(track),
                 })
         return rows
+
+    def _download_badge(self, track):
+        """Return the progress badge for a downloading track, or None."""
+        percent = self.downloads.get(track["id"]) if track else None
+        if percent is None:
+            return None
+        return " DL %3d%% " % percent
 
     def _clamp(self, rows, h):
         """Keep the selection in range and scroll it into view."""
@@ -479,14 +494,23 @@ class TUI:
             self._notify("Track is already local")
             return
         url, tid, title = track["url_or_path"], track["id"], track["title"]
+        if tid in self.downloads:
+            self._notify("Already downloading: " + title)
+            return
+        self.downloads[tid] = 0.0
         self._notify("Downloading '%s' in background..." % title)
+
+        def progress(percent):
+            self.downloads[tid] = percent
 
         def work():
             try:
-                path = self.dl.download(url)
+                path = self.dl.download(url, on_progress=progress)
             except DownloaderError as exc:
                 self._notify("Download failed: " + str(exc))
                 return
+            finally:
+                self.downloads.pop(tid, None)
             if path and os.path.isfile(path):
                 self.lib.update_track(tid, url_or_path=path, source="local")
                 self._notify("Downloaded: " + os.path.basename(path))

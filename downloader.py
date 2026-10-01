@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 
 
 class DownloaderError(Exception):
@@ -21,6 +22,10 @@ class Downloader:
     # every few months, so a binary older than this silently breaks both
     # playback and downloads with 403s.
     STALE_DAYS = 60
+
+    # Tag put on every progress line so it cannot be mistaken for the
+    # filepath that --print writes to the same stream.
+    PROGRESS_MARKER = "MPTUI "
 
     def __init__(self, browser="firefox", music_path="~/music"):
         self.browser = browser
@@ -87,19 +92,57 @@ class Downloader:
             raise DownloaderError("yt-dlp returned no stream URL")
         return urls[0]
 
-    def download(self, url):
-        """Download audio as mp3 into ``music_path``; return the file path."""
+    def download(self, url, on_progress=None):
+        """Download audio as mp3 into ``music_path``; return the file path.
+
+        ``on_progress`` is called with the percentage downloaded so far.
+        The mp3 conversion that follows reports no progress of its own,
+        so it stays at 100% until the file lands.
+        """
         os.makedirs(self.music_path, exist_ok=True)
         template = os.path.join(self.music_path, "%(title)s.%(ext)s")
         cmd = [
             "yt-dlp", "-x", "--audio-format", "mp3", "--no-playlist",
             "-o", template, "--print", "after_move:filepath",
+            # --print implies --quiet, so the progress has to be asked
+            # for; --newline puts each update on a line of its own.
+            "--progress", "--newline", "--progress-template",
+            "download:" + self.PROGRESS_MARKER + "%(progress._percent_str)s",
         ]
         cmd += self._cookie_args()
         cmd.append(url)
-        out = self._run(cmd, timeout=600)
-        lines = [line for line in out.stdout.splitlines() if line.strip()]
-        return lines[-1] if lines else None
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True)
+        except OSError:
+            raise DownloaderError("yt-dlp is not installed")
+        # Drain stderr in a thread: a full pipe would otherwise block
+        # yt-dlp half way through the download.
+        errors = []
+        drain = threading.Thread(target=lambda: errors.extend(proc.stderr),
+                                 daemon=True)
+        drain.start()
+        printed = []
+        for line in proc.stdout:
+            line = line.strip()
+            if line.startswith(self.PROGRESS_MARKER):
+                percent = self._parse_percent(line[len(self.PROGRESS_MARKER):])
+                if percent is not None and on_progress:
+                    on_progress(percent)
+            elif line:
+                printed.append(line)
+        if proc.wait() != 0:
+            drain.join(timeout=5)
+            raise DownloaderError(self._explain("".join(errors)))
+        return printed[-1] if printed else None
+
+    @staticmethod
+    def _parse_percent(text):
+        """Parse yt-dlp's ``_percent_str`` ("  42.1%") into a float."""
+        try:
+            return float(text.strip().rstrip("%"))
+        except ValueError:
+            return None
 
     def _run(self, cmd, timeout):
         """Run a yt-dlp command, raising DownloaderError on failure."""

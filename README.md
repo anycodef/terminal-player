@@ -19,7 +19,7 @@ background session management.
   [stream] Daft Punk - Get Lucky
 > [stream] Tame Impala - Let It Happen
   [local ] Boards of Canada - Roygbiv
-  [stream] Aphex Twin - Avril 14th
+  [stream] Aphex Twin - Avril 14th                                            DL  42% 
   [local ] Radiohead - Weird Fishes
 
  Welcome to mplayer-tui - press ? for help
@@ -141,6 +141,11 @@ interface.
 Select a stream track and press `D`. It is downloaded as an mp3 into
 `music_path` and the library entry is switched from `stream` to
 `local`.
+
+The download runs in the background and the track shows a live
+`DL  42%` badge at the end of its row, in whichever view it appears.
+Several downloads can run at once; the badge disappears when the file
+lands (the percentage sits at 100% while the mp3 is being converted).
 
 ## Troubleshooting
 
