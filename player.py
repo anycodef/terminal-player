@@ -255,7 +255,14 @@ class Player:
         if not self.queue:
             return None
         if self.shuffle:
-            return random.randrange(len(self.queue))
+            if len(self.queue) < 2:
+                return 0
+            # Never hand back the track that is already playing: a
+            # shuffle that repeats a song feels broken.
+            nxt = self.index
+            while nxt == self.index:
+                nxt = random.randrange(len(self.queue))
+            return nxt
         if self.index + 1 < len(self.queue):
             return self.index + 1
         if self.loop_playlist:
