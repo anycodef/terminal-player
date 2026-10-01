@@ -79,6 +79,8 @@ class TUI:
         """Run the curses event loop until the user quits."""
         curses.curs_set(0)
         self.scr.timeout(500)
+        # Spawning yt-dlp takes a moment: check its age off the main loop.
+        threading.Thread(target=self._check_yt_dlp, daemon=True).start()
         try:
             self._init_colors()
         except curses.error:
@@ -92,6 +94,12 @@ class TUI:
             if key == -1:
                 continue  # timeout: loop round to refresh the status
             self._handle_key(key)
+
+    def _check_yt_dlp(self):
+        """Warn once at startup if the yt-dlp binary is missing or old."""
+        warning = self.dl.stale_warning()
+        if warning:
+            self._notify("Warning: " + warning)
 
     def _init_colors(self):
         """Initialise the colour pairs used across the interface."""

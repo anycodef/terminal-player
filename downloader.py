@@ -5,8 +5,10 @@ the configured browser so that age-restricted or region-locked content
 keeps working without manual cookie files.
 """
 
+import datetime
 import json
 import os
+import shutil
 import subprocess
 
 
@@ -15,6 +17,11 @@ class DownloaderError(Exception):
 
 
 class Downloader:
+    # yt-dlp releases are dated. YouTube changes its streaming endpoints
+    # every few months, so a binary older than this silently breaks both
+    # playback and downloads with 403s.
+    STALE_DAYS = 60
+
     def __init__(self, browser="firefox", music_path="~/music"):
         self.browser = browser
         self.music_path = os.path.expanduser(music_path)
@@ -24,6 +31,35 @@ class Downloader:
         if self.browser:
             return ["--cookies-from-browser", self.browser]
         return []
+
+    def version(self):
+        """Return the version string of the yt-dlp on PATH, or None."""
+        try:
+            out = subprocess.run(["yt-dlp", "--version"],
+                                 capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if out.returncode != 0:
+            return None
+        return out.stdout.strip() or None
+
+    def stale_warning(self):
+        """Return a warning if yt-dlp is missing or too old, else None."""
+        version = self.version()
+        if version is None:
+            return "yt-dlp is not installed or failed to run"
+        try:
+            released = datetime.datetime.strptime(version[:10], "%Y.%m.%d")
+        except ValueError:
+            return None  # unexpected version format: nothing to judge
+        age = (datetime.datetime.now() - released).days
+        if age < self.STALE_DAYS:
+            return None
+        # Name the binary: a stale copy earlier on PATH (for example in
+        # /usr/local/bin) shadows an up-to-date packaged one.
+        return ("yt-dlp %s (%s) is %d days old - YouTube will reject "
+                "streams and downloads; update it"
+                % (version, shutil.which("yt-dlp") or "yt-dlp", age))
 
     def fetch_metadata(self, url):
         """Return ``{"title", "duration"}`` for a URL using ``yt-dlp -J``."""
@@ -83,8 +119,8 @@ class Downloader:
         """Turn common yt-dlp failures into actionable messages."""
         text = (stderr or "").lower()
         if "403" in text or "forbidden" in text:
-            return ("403 Forbidden - YouTube blocked the request. "
-                    "Check the 'browser' field in config.json.")
+            return ("403 Forbidden - YouTube rejected the request. "
+                    "Usually an outdated yt-dlp: update it and retry.")
         if "sign in" in text or "bot" in text or "confirm you" in text:
             return ("Bot detection - set the correct browser for cookies "
                     "in config.json (firefox/chrome/chromium).")
