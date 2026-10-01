@@ -33,6 +33,7 @@ class Player:
         # Queue state managed by the player itself.
         self.queue = []                     # list of track dicts
         self.index = -1                     # current index into queue
+        self._load_gen = 0                  # guards late stream resolves
         self.loop_track = False
         self.loop_playlist = False
         self.shuffle = False
@@ -208,12 +209,34 @@ class Player:
         self._play_track(self.queue[i])
 
     def _play_track(self, track):
-        """Resolve (if needed) and load a track into mpv."""
-        url = track["url_or_path"]
+        """Resolve (if needed) and load a track into mpv.
+
+        Resolving a stream shells out to yt-dlp and takes seconds, so it
+        runs on a worker thread instead of freezing whoever called us
+        (the TUI redraws from the same thread it reads keys on).
+        """
+        self._load_gen += 1
+        gen = self._load_gen
         if track.get("source") == "youtube" and self.resolver:
-            resolved = self.resolver(track)
-            if resolved:
-                url = resolved
+            threading.Thread(target=self._resolve_and_load,
+                             args=(track, gen), daemon=True).start()
+        else:
+            self._load(track, track["url_or_path"], gen)
+
+    def _resolve_and_load(self, track, gen):
+        """Worker: resolve a stream URL and load it if still wanted.
+
+        A failed resolve loads nothing: the raw page URL would only buy
+        a second, more confusing error from mpv.
+        """
+        url = self.resolver(track)
+        if url:
+            self._load(track, url, gen)
+
+    def _load(self, track, url, gen):
+        """Hand a URL to mpv unless a newer track has been asked for."""
+        if gen != self._load_gen:
+            return
         self.command("loadfile", url, "replace")
         self.set_property("pause", False)
         if self.on_track_change:

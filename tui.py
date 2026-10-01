@@ -56,7 +56,7 @@ class TUI:
 
         # Wire the player callbacks back into the TUI / library.
         self.player.resolver = self._resolve
-        self.player.on_track_change = self.lib.record_play
+        self.player.on_track_change = self._on_track_change
         self.player.on_error = self._on_player_error
 
     # --- player callbacks ----------------------------------------------
@@ -67,6 +67,11 @@ class TUI:
         except DownloaderError as exc:
             self._notify("Error: " + str(exc))
             return None
+
+    def _on_track_change(self, track):
+        """A track really started playing: record it and announce it."""
+        self.lib.record_play(track)
+        self._notify("Playing: " + track["title"])
 
     def _on_player_error(self, reason):
         """Report an mpv load/playback failure in the status bar."""
@@ -427,7 +432,10 @@ class TUI:
             return
         self.player.set_queue(queue, idx)
         self.player.play_index(idx)
-        self._notify("Playing: " + track["title"])
+        if track.get("source") == "youtube":
+            # Resolving happens off-thread; the real "Playing" message
+            # arrives from the track-change callback.
+            self._notify("Resolving stream: " + track["title"])
 
     def _ensure_player(self):
         """Make sure mpv is reachable; notify and return False if not."""
