@@ -16,6 +16,7 @@ import os
 import threading
 import time
 
+from config import save_config
 from downloader import DownloaderError
 
 # View identifiers.
@@ -101,6 +102,18 @@ class TUI:
             if key == -1:
                 continue  # timeout: loop round to refresh the status
             self._handle_key(key)
+        self._save_volume()
+
+    def _save_volume(self):
+        """Remember the volume so the next run starts where this one left."""
+        volume = self._status.get("volume")
+        if volume is None or int(volume) == self.config.get("default_volume"):
+            return
+        self.config["default_volume"] = int(volume)
+        try:
+            save_config(self.config)
+        except OSError:
+            pass  # a read-only config must not stop the player quitting
 
     def _check_yt_dlp(self):
         """Warn once at startup if the yt-dlp binary is missing or old."""
