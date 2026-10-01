@@ -163,7 +163,19 @@ lands (the percentage sits at 100% while the mp3 is being converted).
 
 ## Troubleshooting
 
-**403 Forbidden / "Sign in to confirm" errors**
+**403 Forbidden on streams and downloads**
+Almost always an outdated `yt-dlp`: YouTube changes its streaming
+endpoints every few months, and an old release hands mpv URLs that are
+then refused. mplayer-tui warns at startup when the binary is more than
+60 days old and prints its path, because a stale copy early on `PATH`
+(say in `/usr/local/bin`) quietly shadows the packaged one:
+
+```sh
+yt-dlp --version      # should be a recent date
+type -a yt-dlp        # should list a single binary
+```
+
+**"Sign in to confirm you are not a bot"**
 YouTube is blocking anonymous requests. mplayer-tui passes browser
 cookies to `yt-dlp` via `--cookies-from-browser`. Make sure the
 `browser` field in `config.json` matches a browser you are logged into
