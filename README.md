@@ -60,7 +60,7 @@ Settings live in `~/.config/mplayer-tui/config.json`:
 |------------------|------------------------------------------------------------------|----------------|
 | `browser`        | Browser used for `--cookies-from-browser` (`firefox`/`chrome`/`chromium`). Set to `""` to disable cookies. | `firefox`      |
 | `music_path`     | Directory where downloaded tracks are saved.                     | `~/music`      |
-| `default_volume` | Volume mpv starts at, 0-130.                                     | `80`           |
+| `default_volume` | Volume mpv starts at, 0-130; updated when you quit.              | `80`           |
 | `theme`          | Color theme name.                                                | `default`      |
 
 Other data files in the same directory:
