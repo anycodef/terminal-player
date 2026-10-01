@@ -540,6 +540,10 @@ class TUI:
         if not track:
             self._notify("No track selected")
             return
+        answer = self._prompt("Delete from the library (file kept)? [y/N]: ")
+        if answer.lower() not in ("y", "yes"):
+            self._notify("Delete cancelled")
+            return
         self.lib.delete_track(track["id"])
         if track["id"] in self.marked:
             self.marked.remove(track["id"])
