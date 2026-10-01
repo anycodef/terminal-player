@@ -55,6 +55,7 @@ class TUI:
         # Wire the player callbacks back into the TUI / library.
         self.player.resolver = self._resolve
         self.player.on_track_change = self.lib.record_play
+        self.player.on_error = self._on_player_error
 
     # --- player callbacks ----------------------------------------------
     def _resolve(self, track):
@@ -64,6 +65,14 @@ class TUI:
         except DownloaderError as exc:
             self._notify("Error: " + str(exc))
             return None
+
+    def _on_player_error(self, reason):
+        """Report an mpv load/playback failure in the status bar."""
+        track = self.player.current_track()
+        hint = ""
+        if track and track.get("source") == "youtube":
+            hint = " (stale stream URL? update yt-dlp)"
+        self._notify("Playback error: %s%s" % (reason, hint))
 
     # --- main loop ------------------------------------------------------
     def run(self):

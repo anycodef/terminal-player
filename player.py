@@ -40,6 +40,7 @@ class Player:
         # Callbacks wired up by the TUI.
         self.resolver = None                # track -> direct stream URL
         self.on_track_change = None         # track -> None
+        self.on_error = None                # message -> None
 
     # --- process / connection ------------------------------------------
     def start(self):
@@ -147,6 +148,11 @@ class Player:
             # A track finished on its own: advance in a separate thread so
             # the reader stays free to dispatch the loadfile response.
             threading.Thread(target=self._handle_eof, daemon=True).start()
+        elif msg.get("event") == "end-file" and msg.get("reason") == "error":
+            # mpv could not open (or keep reading) the file. Without this
+            # the TUI just dropped back to STOPPED with no explanation.
+            if self.on_error:
+                self.on_error(msg.get("file_error") or "could not play file")
 
     def command(self, *args, timeout=2.0):
         """Send an mpv command and wait for the reply.
