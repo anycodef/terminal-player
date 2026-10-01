@@ -43,6 +43,7 @@ class TUI:
         self.search_query = ""
         self.search_active = False  # True while editing the search query
         self.expanded = set()       # names of expanded playlists
+        self.marked = []            # track ids in the temporary loop set
 
         self.message = "Welcome to mplayer-tui - press ? for help"
         self.message_time = time.time()
@@ -161,6 +162,8 @@ class TUI:
             loop = "  loop:playlist"
         if self.player.shuffle:
             loop += "  shuffle"
+        if self.marked:
+            loop += "  marked:%d" % len(self.marked)
         line = " mplayer-tui   %s%s   [%s]%s" % (
             title, artist, self._playback_state(), loop)
         self._addstr(0, 0, line.ljust(w - 1),
@@ -232,8 +235,8 @@ class TUI:
                          curses.color_pair(4))
         hints1 = (" Space play/pause  n/p next/prev  +/- volume  "
                   "Enter play  Tab switch view")
-        hints2 = (" a add  d delete  A playlist  D download  "
-                  "l loop  L loop-list  s shuffle  q quit  Q quit+stop")
+        hints2 = (" a add  d del  A playlist  D download  m mark  "
+                  "M loop-marked  c clear  l/L loop  s shuffle  q/Q quit")
         self._addstr(h - 2, 0, hints1.ljust(w - 1), curses.color_pair(1))
         self._addstr(h - 1, 0, hints2.ljust(w - 1), curses.color_pair(1))
         vol = self._status.get("volume")
@@ -257,7 +260,7 @@ class TUI:
             for t in tracks:
                 tag = "local" if t["source"] == "local" else "stream"
                 rows.append({
-                    "text": "  [%-6s] %s" % (tag, t["title"]),
+                    "text": " %s[%-6s] %s" % (self._mark(t), tag, t["title"]),
                     "track": t, "queue": tracks, "playlist": None,
                     "badge": self._download_badge(t),
                 })
@@ -272,7 +275,7 @@ class TUI:
                 if name in self.expanded:
                     for t in tracks:
                         rows.append({
-                            "text": "      %s" % t["title"],
+                            "text": "    %s %s" % (self._mark(t), t["title"]),
                             "track": t, "queue": tracks, "playlist": name,
                             "badge": self._download_badge(t),
                         })
@@ -282,7 +285,8 @@ class TUI:
                     "%Y-%m-%d %H:%M", time.localtime(h["played_at"]))
                 track = self.lib.get_track(h["track_id"])
                 rows.append({
-                    "text": "  %s  %s" % (stamp, h["title"]),
+                    "text": " %s%s  %s" % (self._mark(track), stamp,
+                                              h["title"]),
                     "track": track,
                     "queue": self.lib.tracks, "playlist": None,
                     "badge": self._download_badge(track),
@@ -295,6 +299,10 @@ class TUI:
         if percent is None:
             return None
         return " DL %3d%% " % percent
+
+    def _mark(self, track):
+        """Return the marker shown for a track in the temporary loop set."""
+        return "*" if track and track["id"] in self.marked else " "
 
     def _clamp(self, rows, h):
         """Keep the selection in range and scroll it into view."""
@@ -351,6 +359,12 @@ class TUI:
         elif key == ord("s"):
             self.player.shuffle = not self.player.shuffle
             self._notify("Shuffle %s" % self._onoff(self.player.shuffle))
+        elif key == ord("m"):
+            self._toggle_mark()
+        elif key == ord("M"):
+            self._play_marked()
+        elif key == ord("c"):
+            self._clear_marks()
         elif key == ord("a"):
             self._add_track()
         elif key == ord("d"):
@@ -362,7 +376,8 @@ class TUI:
         elif key == ord("/") and self.view == VIEW_SEARCH:
             self.search_active = True
         elif key == ord("?"):
-            self._notify("Keys: Space n p +/- l L s a d A D Enter Tab q Q")
+            self._notify(
+                "Keys: Space n p +/- l L s m M c a d A D Enter Tab q Q")
         elif key == ord("q"):
             self.running = False
         elif key == ord("Q"):
@@ -408,15 +423,62 @@ class TUI:
         queue = row.get("queue") or [track]
         idx = next((i for i, t in enumerate(queue)
                     if t["id"] == track["id"]), 0)
-        if not self.player.connected():
-            try:
-                self.player.start()
-            except RuntimeError:
-                self._notify("mpv not reachable - try again")
-                return
+        if not self._ensure_player():
+            return
         self.player.set_queue(queue, idx)
         self.player.play_index(idx)
         self._notify("Playing: " + track["title"])
+
+    def _ensure_player(self):
+        """Make sure mpv is reachable; notify and return False if not."""
+        if self.player.connected():
+            return True
+        try:
+            self.player.start()
+        except RuntimeError:
+            self._notify("mpv not reachable - try again")
+            return False
+        return True
+
+    # --- temporary loop set ---------------------------------------------
+    def _toggle_mark(self):
+        """Add or remove the selected track from the temporary loop set."""
+        track = self._selected_track()
+        if not track:
+            self._notify("No track selected")
+            return
+        if track["id"] in self.marked:
+            self.marked.remove(track["id"])
+            self._notify("Unmarked (%d marked)" % len(self.marked))
+        else:
+            self.marked.append(track["id"])
+            self._notify("Marked (%d): %s" % (len(self.marked), track["title"]))
+
+    def _play_marked(self):
+        """Loop the marked tracks, in the order they were marked.
+
+        The set only lives in memory: it is a loop for right now, not a
+        playlist, so nothing is written to ``playlists.json``.
+        """
+        tracks = [t for t in map(self.lib.get_track, self.marked) if t]
+        if not tracks:
+            self._notify("Nothing marked - press m on the tracks first")
+            return
+        if not self._ensure_player():
+            return
+        self.player.set_loop_track(False)
+        self.player.loop_playlist = True
+        self.player.set_queue(tracks, 0)
+        self.player.play_index(0)
+        self._notify("Looping %d marked tracks" % len(tracks))
+
+    def _clear_marks(self):
+        """Drop the temporary loop set, leaving playback alone."""
+        if not self.marked:
+            self._notify("Nothing marked")
+            return
+        self.marked = []
+        self._notify("Marks cleared")
 
     def _selected_track(self):
         rows = self.build_rows()
@@ -471,6 +533,8 @@ class TUI:
             self._notify("No track selected")
             return
         self.lib.delete_track(track["id"])
+        if track["id"] in self.marked:
+            self.marked.remove(track["id"])
         self._notify("Deleted: " + track["title"])
 
     def _add_to_playlist(self):

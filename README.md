@@ -79,6 +79,9 @@ Other data files in the same directory:
 | `l`       | Toggle single-track loop                                |
 | `L`       | Toggle playlist loop                                    |
 | `s`       | Toggle shuffle                                          |
+| `m`       | Mark / unmark the selected track for the momentary loop |
+| `M`       | Loop the marked tracks (in the order they were marked)  |
+| `c`       | Clear the marks                                         |
 | `Enter`   | Play the selected track (or expand a playlist)          |
 | `a`       | Add a URL or local file path to the library             |
 | `d`       | Delete the selected track from the library              |
@@ -113,6 +116,17 @@ music stop
 Press `a` and paste a YouTube URL — the title is fetched automatically
 and the track is saved as a stream. You can also enter a local file
 path to add an existing file.
+
+### Looping a few tracks right now
+
+To put two or more tracks on repeat without saving anything, mark them
+with `m` (a `*` appears next to each one, and the top bar counts them)
+and press `M`. Playback jumps to the first marked track and loops the
+marked set, in the order you marked them, skipping everything else.
+
+The set only lives in memory: it is a loop for the moment, not a
+playlist, so nothing is written to `playlists.json`. Press `c` to clear
+the marks (the music keeps playing) or `L` to leave the loop.
 
 ### Creating playlists
 
