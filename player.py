@@ -195,6 +195,15 @@ class Player:
         self.queue = list(tracks)
         self.index = index if self.queue else -1
 
+    def remove_index(self, i):
+        """Drop queue entry ``i``, keeping the current track pointed at."""
+        if not (0 <= i < len(self.queue)) or i == self.index:
+            return False
+        del self.queue[i]
+        if i < self.index:
+            self.index -= 1
+        return True
+
     def current_track(self):
         """Return the track dict currently selected in the queue."""
         if 0 <= self.index < len(self.queue):

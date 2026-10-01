@@ -14,7 +14,7 @@ background session management.
  mplayer-tui   Daft Punk - Get Lucky  (stream)   [PLAYING]  loop:playlist
  1:23 [###############-----------------------] 4:08  33%
 
-  1:Library   2:Playlists   3:Search   4:History
+  1:Library   2:Playlists   3:Search   4:History   5:Queue
 
   [stream] Daft Punk - Get Lucky
 > [stream] Tame Impala - Let It Happen
@@ -84,11 +84,12 @@ Other data files in the same directory:
 | `c`       | Clear the marks                                         |
 | `Enter`   | Play the selected track (or expand a playlist)          |
 | `a`       | Add a URL or local file path to the library             |
-| `d`       | Delete the selected track from the library              |
+| `d`       | Delete the track (in Queue view: drop it from the queue)|
 | `A`       | Add the selected track to a playlist                    |
 | `D`       | Download the selected stream locally                    |
-| `Tab`     | Switch between Library / Playlists / Search / History   |
+| `Tab`     | Cycle the views (Library / … / Queue)                   |
 | `↑` / `↓` | Move the selection (also `k` / `j`)                     |
+| `1`-`5`   | Jump straight to a view                                 |
 | `?`       | Show a keybinding reminder                              |
 | `q`       | Quit the interface (audio keeps playing)                |
 | `Q`       | Quit the interface and stop the audio                   |
@@ -116,6 +117,17 @@ music stop
 Press `a` and paste a YouTube URL — the title is fetched automatically
 and the track is saved as a stream. You can also enter a local file
 path to add an existing file.
+
+### The queue
+
+Press `5` (or `Tab` round to it) for the **Queue** view: the tracks
+lined up for playback, numbered, with `>` on the one playing and the
+ones already played dimmed. The view opens on the current track.
+
+`Enter` jumps straight to an entry and `d` drops one from the queue —
+the library is not touched, so `d` there is safe. The queue itself is
+whatever you last started: a library listing, a playlist, or a marked
+set.
 
 ### Looping a few tracks right now
 

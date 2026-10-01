@@ -4,7 +4,7 @@ The screen is split into four panels:
 
   * top bar      - current track, state and loop status
   * progress bar - elapsed / total time and a visual bar
-  * main panel   - one of four switchable views (Tab)
+  * main panel   - one of five switchable views (Tab, or 1-5)
   * bottom bar   - keybinding hints, status messages and volume
 
 The main loop redraws on a 500ms timeout so the progress bar and
@@ -20,8 +20,9 @@ from config import save_config
 from downloader import DownloaderError
 
 # View identifiers.
-VIEW_LIBRARY, VIEW_PLAYLISTS, VIEW_SEARCH, VIEW_HISTORY = range(4)
-VIEW_NAMES = ["Library", "Playlists", "Search", "History"]
+VIEW_LIBRARY, VIEW_PLAYLISTS, VIEW_SEARCH, VIEW_HISTORY, VIEW_QUEUE = range(5)
+VIEW_NAMES = ["Library", "Playlists", "Search", "History", "Queue"]
+VIEW_COUNT = len(VIEW_NAMES)
 
 
 def fmt_time(seconds):
@@ -226,7 +227,7 @@ class TUI:
         list_top = 4
 
         if not rows:
-            self._addstr(list_top, 2, "(empty)", curses.A_DIM)
+            self._addstr(list_top, 2, self._empty_text(), curses.A_DIM)
             return
 
         current = self.player.current_track()
@@ -236,9 +237,17 @@ class TUI:
             text = row["text"]
             attr = 0
             track = row.get("track")
-            if track and current and track["id"] == current["id"]:
+            # The queue knows which entry plays by position; the other
+            # views can only match on the track id.
+            playing = row.get("playing")
+            if playing is None:
+                playing = bool(track and current and
+                               track["id"] == current["id"])
+            if playing:
                 attr = curses.color_pair(3)
                 text = ">" + text[1:]
+            if row.get("dim"):
+                attr |= curses.A_DIM
             if i == self.selection:
                 attr = curses.color_pair(2)
             self._addstr(y, 0, text.ljust(w - 1), attr)
@@ -252,7 +261,7 @@ class TUI:
             self._addstr(h - 3, 0, (" " + self.message).ljust(w - 1),
                          curses.color_pair(4))
         hints1 = (" Space play/pause  n/p next/prev  +/- volume  "
-                  "Enter play  Tab switch view")
+                  "Enter play  Tab/1-5 view")
         hints2 = (" a add  d del  A playlist  D download  m mark  "
                   "M loop-marked  c clear  l/L loop  s shuffle  q/Q quit")
         self._addstr(h - 2, 0, hints1.ljust(w - 1), curses.color_pair(1))
@@ -297,6 +306,18 @@ class TUI:
                             "track": t, "queue": tracks, "playlist": name,
                             "badge": self._download_badge(t),
                         })
+        elif self.view == VIEW_QUEUE:
+            for i, t in enumerate(self.player.queue):
+                tag = "local" if t["source"] == "local" else "stream"
+                rows.append({
+                    "text": " %s%2d. [%-6s] %s" % (self._mark(t), i + 1,
+                                                   tag, t["title"]),
+                    "track": t, "queue": self.player.queue, "playlist": None,
+                    "badge": self._download_badge(t),
+                    "queue_index": i,
+                    "playing": i == self.player.index,
+                    "dim": i < self.player.index,
+                })
         elif self.view == VIEW_HISTORY:
             for h in self.lib.history:
                 stamp = time.strftime(
@@ -317,6 +338,12 @@ class TUI:
         if percent is None:
             return None
         return " DL %3d%% " % percent
+
+    def _empty_text(self):
+        """What to show when the current view lists nothing."""
+        if self.view == VIEW_QUEUE:
+            return "(queue empty - press Enter on a track to start one)"
+        return "(empty)"
 
     def _mark(self, track):
         """Return the marker shown for a track in the temporary loop set."""
@@ -354,10 +381,9 @@ class TUI:
         elif key == curses.KEY_NPAGE:
             self.selection += 10
         elif key == 9:  # Tab
-            self.view = (self.view + 1) % 4
-            self.selection = 0
-            self.scroll = 0
-            self.search_active = (self.view == VIEW_SEARCH)
+            self._set_view(self.view + 1)
+        elif ord("1") <= key < ord("1") + VIEW_COUNT:
+            self._set_view(key - ord("1"))
         elif key in (curses.KEY_ENTER, 10, 13):
             self._activate_selection()
         elif key == ord(" "):
@@ -386,7 +412,10 @@ class TUI:
         elif key == ord("a"):
             self._add_track()
         elif key == ord("d"):
-            self._delete_track()
+            if self.view == VIEW_QUEUE:
+                self._remove_from_queue()
+            else:
+                self._delete_track()
         elif key == ord("A"):
             self._add_to_playlist()
         elif key == ord("D"):
@@ -395,12 +424,22 @@ class TUI:
             self.search_active = True
         elif key == ord("?"):
             self._notify(
-                "Keys: Space n p +/- l L s m M c a d A D Enter Tab q Q")
+                "Keys: Space n p +/- l L s m M c a d A D Enter Tab 1-5 q Q")
         elif key == ord("q"):
             self.running = False
         elif key == ord("Q"):
             self.running = False
             self.quit_audio = True
+
+    def _set_view(self, view):
+        """Switch view, resetting the selection and the scroll."""
+        self.view = view % VIEW_COUNT
+        self.scroll = 0
+        # The queue opens on whatever is playing, not on its first entry.
+        self.selection = (self.player.index
+                          if self.view == VIEW_QUEUE and self.player.index > 0
+                          else 0)
+        self.search_active = (self.view == VIEW_SEARCH)
 
     def _handle_search_key(self, key):
         """Edit the search query. Returns True if the key was consumed."""
@@ -439,8 +478,10 @@ class TUI:
             self._notify("Track is no longer in the library")
             return
         queue = row.get("queue") or [track]
-        idx = next((i for i, t in enumerate(queue)
-                    if t["id"] == track["id"]), 0)
+        idx = row.get("queue_index")
+        if idx is None:
+            idx = next((i for i, t in enumerate(queue)
+                        if t["id"] == track["id"]), 0)
         if not self._ensure_player():
             return
         self.player.set_queue(queue, idx)
@@ -573,6 +614,20 @@ class TUI:
         if track["id"] in self.marked:
             self.marked.remove(track["id"])
         self._notify("Deleted: " + track["title"])
+
+    def _remove_from_queue(self):
+        """Drop the selected entry from the queue, leaving the library be."""
+        rows = self.build_rows()
+        if not (0 <= self.selection < len(rows)):
+            return
+        index = rows[self.selection].get("queue_index")
+        if index is None:
+            return
+        title = self.player.queue[index]["title"]
+        if not self.player.remove_index(index):
+            self._notify("That one is playing - skip it with n first")
+            return
+        self._notify("Removed from the queue: " + title)
 
     def _add_to_playlist(self):
         track = self._selected_track()
