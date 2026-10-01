@@ -516,6 +516,10 @@ class TUI:
         value = self._prompt("Add URL or local path: ")
         if not value:
             return
+        existing = self._find_track(value)
+        if existing:
+            self._notify("Already in the library: " + existing["title"])
+            return
         if value.startswith("http://") or value.startswith("https://"):
             self._notify("Fetching metadata...")
             self._draw()
@@ -534,6 +538,14 @@ class TUI:
             title = os.path.splitext(os.path.basename(path))[0]
             self.lib.add_track(title, path, "local")
             self._notify("Added: " + title)
+
+    def _find_track(self, url_or_path):
+        """Return the library track holding this URL or path, if any."""
+        candidates = {url_or_path, os.path.expanduser(url_or_path)}
+        for track in self.lib.tracks:
+            if track["url_or_path"] in candidates:
+                return track
+        return None
 
     def _delete_track(self):
         track = self._selected_track()
