@@ -2,16 +2,25 @@
 """mplayer-tui entry point and tmux session management.
 
 Usage:
-  music         launch the player, or reattach to a running session
-  music stop    stop playback and kill the background session
+  music          launch the player, or reattach to a running session
+  music stop     stop playback and kill the background session
+  music toggle   pause or resume
+  music play     resume
+  music pause    pause
+
+The toggle/play/pause commands only poke the running mpv over its IPC
+socket, so a media key or headset button bound to them works with the
+interface in the foreground, detached in tmux, or closed entirely.
 
 When tmux is available the TUI runs inside a detached session named
 ``music``. The user can detach with Ctrl+B D and the audio keeps
 playing; running ``music`` again reattaches to it.
 """
 
+import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 
@@ -28,10 +37,31 @@ from tui import TUI
 
 SESSION = "music"
 
+# Commands that only talk to mpv: no interface, no tmux session.
+IPC_COMMANDS = {
+    "toggle": ["cycle", "pause"],
+    "play": ["set_property", "pause", False],
+    "pause": ["set_property", "pause", True],
+}
+
 
 def have(cmd):
     """Return True if ``cmd`` is on PATH."""
     return shutil.which(cmd) is not None
+
+
+def send_command(command):
+    """Send one command to the running mpv; False if nothing answered."""
+    if not os.path.exists(IPC_SOCKET):
+        return False
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(IPC_SOCKET)
+        sock.sendall(json.dumps({"command": command}).encode() + b"\n")
+        sock.close()
+    except OSError:
+        return False
+    return True
 
 
 def tmux_session_exists():
@@ -86,16 +116,7 @@ def run_tui():
 
 def stop():
     """Implement ``music stop``: quit mpv and kill the tmux session."""
-    if os.path.exists(IPC_SOCKET):
-        try:
-            import json
-            import socket
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.connect(IPC_SOCKET)
-            sock.sendall(json.dumps({"command": ["quit"]}).encode() + b"\n")
-            sock.close()
-        except OSError:
-            pass
+    send_command(["quit"])
     _kill_session()
     print("music: stopped")
 
@@ -105,6 +126,11 @@ def main():
     args = sys.argv[1:]
     if args and args[0] == "stop":
         stop()
+        return
+    if args and args[0] in IPC_COMMANDS:
+        if not send_command(IPC_COMMANDS[args[0]]):
+            print("music: nothing is playing")
+            sys.exit(1)
         return
 
     script = os.path.abspath(__file__)

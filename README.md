@@ -162,6 +162,37 @@ Run `music` again. If a background session exists it reattaches to it;
 otherwise it reconnects to the running `mpv` and shows a fresh
 interface.
 
+### Headset button and media keys
+
+`music` can pause and resume the running player without the interface:
+
+```sh
+music toggle   # pause or resume
+music play
+music pause
+```
+
+These only talk to the `mpv` IPC socket, so they work with the interface
+focused, detached in `tmux`, or closed entirely. Bind them to your media
+keys and a headset button controls playback from anywhere. On sway:
+
+```
+bindsym --locked XF86AudioPlay exec music toggle
+bindsym --locked XF86AudioPause exec music toggle
+```
+
+Both keysyms are bound on purpose: a Bluetooth headset often sends
+`KEY_PLAYCD` / `KEY_PAUSECD` — which the keymap turns into
+`XF86AudioPlay` / `XF86AudioPause` — instead of `KEY_PLAYPAUSE`. Check
+what yours emits with:
+
+```sh
+grep -A5 AVRCP /proc/bus/input/devices
+```
+
+Next and previous are not available this way: the queue lives in the
+interface, not in `mpv`.
+
 ### Downloading for offline use
 
 Select a stream track and press `D`. It is downloaded as an mp3 into
