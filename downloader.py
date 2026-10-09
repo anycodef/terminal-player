@@ -17,6 +17,23 @@ class DownloaderError(Exception):
     """Raised when a yt-dlp invocation fails."""
 
 
+# yt-dlp swaps the characters it cannot put in a filename for look-alikes,
+# so a title and the name it was saved under are compared through this.
+_LOOKALIKES = str.maketrans({
+    "\uff02": '"', "\uff1a": ":", "\uff0a": "*", "\uff1f": "?",
+    "\uff1c": "<", "\uff1e": ">", "\uff5c": "|", "\u29f9": "\\",
+    "\u29f8": "/",
+})
+
+# Partial downloads and yt-dlp's own bookkeeping files are not music.
+_NOT_MUSIC = (".part", ".ytdl", ".temp", "")
+
+
+def _loose(text):
+    """Fold a title or a filename so the two can be compared."""
+    return " ".join(text.translate(_LOOKALIKES).lower().split())
+
+
 class Downloader:
     # yt-dlp releases are dated. YouTube changes its streaming endpoints
     # every few months, so a binary older than this silently breaks both
@@ -65,6 +82,29 @@ class Downloader:
         return ("yt-dlp %s (%s) is %d days old - YouTube will reject "
                 "streams and downloads; update it"
                 % (version, shutil.which("yt-dlp") or "yt-dlp", age))
+
+    def existing_file(self, title):
+        """Return the file in ``music_path`` saved for ``title``, if any.
+
+        A download whose interface died never made it back into the
+        library, so the track still claims to be a stream while its file
+        sits on disk. Matching by name is what is left to go on.
+        """
+        wanted = _loose(title)
+        try:
+            names = os.listdir(self.music_path)
+        except OSError:
+            return None
+        matches = [name for name in names
+                   if os.path.splitext(name)[1].lower() not in _NOT_MUSIC
+                   and _loose(os.path.splitext(name)[0]) == wanted]
+        if not matches:
+            return None
+        # Prefer the mp3 this downloader produces: a run interrupted
+        # between the conversion and the cleanup leaves the source
+        # (a .webm, say) sitting next to it.
+        matches.sort(key=lambda name: (not name.lower().endswith(".mp3"), name))
+        return os.path.join(self.music_path, matches[0])
 
     def fetch_metadata(self, url):
         """Return ``{"title", "duration"}`` for a URL using ``yt-dlp -J``."""

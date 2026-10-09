@@ -111,8 +111,8 @@ class TUI:
         """Run the curses event loop until the user quits."""
         curses.curs_set(0)
         self.scr.timeout(500)
-        # Spawning yt-dlp takes a moment: check its age off the main loop.
-        threading.Thread(target=self._check_yt_dlp, daemon=True).start()
+        # Both of these touch the disk: keep them off the main loop.
+        threading.Thread(target=self._startup_checks, daemon=True).start()
         try:
             self._init_colors()
         except curses.error:
@@ -139,11 +139,32 @@ class TUI:
         except OSError:
             pass  # a read-only config must not stop the player quitting
 
-    def _check_yt_dlp(self):
-        """Warn once at startup if the yt-dlp binary is missing or old."""
+    def _startup_checks(self):
+        """Background startup work: yt-dlp's age, then stranded files."""
         warning = self.dl.stale_warning()
         if warning:
             self._notify("Warning: " + warning)
+        self._relink_downloads()
+
+    def _relink_downloads(self):
+        """Point stream entries at downloads that are already on disk.
+
+        A download outlives neither the interface nor the tmux session
+        that holds it, so one that was cut short at the end leaves the
+        file written but the library still calling the track a stream.
+        """
+        linked = 0
+        for track in list(self.lib.tracks):
+            if track["source"] == "local":
+                continue
+            path = self.dl.existing_file(track["title"])
+            if path:
+                self.lib.update_track(track["id"], url_or_path=path,
+                                      source="local")
+                linked += 1
+        if linked:
+            self._notify("Linked %d downloaded file(s) already on disk"
+                         % linked)
 
     def _init_colors(self):
         """Initialise the colour pairs used across the interface."""
@@ -730,6 +751,11 @@ class TUI:
             self._notify("Track is already local")
             return
         url, tid, title = track["url_or_path"], track["id"], track["title"]
+        existing = self.dl.existing_file(title)
+        if existing:
+            self.lib.update_track(tid, url_or_path=existing, source="local")
+            self._notify("Already downloaded: " + os.path.basename(existing))
+            return
         if tid in self.downloads:
             self._notify("Already downloading: " + title)
             return
