@@ -13,6 +13,7 @@ status stay live even when the user is idle.
 
 import curses
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -284,8 +285,8 @@ class TUI:
                          curses.color_pair(4))
         hints1 = (" Space play/pause  n/p next/prev  +/- volume  "
                   "Enter play  Tab/1-5 view")
-        hints2 = (" a add  d del  A playlist  D dl  y path  m mark  "
-                  "M loop-set  c clear  l/L loop  s shuffle  q/Q quit")
+        hints2 = (" a add  d del  A playlist  D dl  y path  C copy  "
+                  "m mark  M loop-set  c clear  l/L loop  s shuffle  q/Q quit")
         self._addstr(h - 2, 0, hints1.ljust(w - 1), curses.color_pair(1))
         self._addstr(h - 1, 0, hints2.ljust(w - 1), curses.color_pair(1))
         vol = self._status.get("volume")
@@ -433,6 +434,8 @@ class TUI:
             self._clear_marks()
         elif key == ord("y"):
             self._yank_path()
+        elif key == ord("C"):
+            self._copy_file()
         elif key == ord("a"):
             self._add_track()
         elif key == ord("d"):
@@ -448,7 +451,7 @@ class TUI:
             self.search_active = True
         elif key == ord("?"):
             self._notify(
-                "Keys: Space n p +/- l L s m M c y a d A D Enter Tab 1-5 q Q")
+                "Keys: Space n p +/- l L s m M c y C a d A D Enter Tab 1-5 q Q")
         elif key == ord("q"):
             self.running = False
         elif key == ord("Q"):
@@ -628,6 +631,47 @@ class TUI:
             self._notify("Copied: " + value)
         else:
             self._notify(value + "   (no clipboard tool - install wl-clipboard)")
+
+    def _copy_file(self):
+        """Copy the selected track's file wherever the user asks."""
+        track = self._selected_track()
+        if not track:
+            self._notify("No track selected")
+            return
+        if track["source"] != "local":
+            self._notify("Not downloaded yet - press D first")
+            return
+        source = track["url_or_path"]
+        if not os.path.isfile(source):
+            self._notify("File is gone: " + source)
+            return
+        answer = self._prompt("Copy the file to (directory): ")
+        if not answer:
+            return
+        target = os.path.expanduser(answer)
+        if os.path.isdir(target):
+            destination = os.path.join(target, os.path.basename(source))
+        elif os.path.isdir(os.path.dirname(target) or "."):
+            destination = target            # a full path, new name included
+        else:
+            self._notify("No such directory: " + target)
+            return
+        if os.path.exists(destination):
+            self._notify("Already there: " + destination)
+            return
+        self._notify("Copying to " + destination + " ...")
+
+        def work():
+            # Copying an hour-long mix to a USB stick is not instant, so
+            # it runs off the interface thread like downloads do.
+            try:
+                shutil.copy2(source, destination)
+            except OSError as exc:
+                self._notify("Copy failed: %s" % exc)
+                return
+            self._notify("Copied to " + destination)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _find_track(self, url_or_path):
         """Return the library track holding this URL or path, if any."""
