@@ -87,6 +87,8 @@ Other data files in the same directory:
 | `d`       | Delete the track (in Queue view: drop it from the queue)|
 | `A`       | Add the selected track to a playlist                    |
 | `D`       | Download the selected stream locally                    |
+| `y`       | Show the track's path or URL and copy it to the clipboard|
+| `C`       | Copy the downloaded file to another directory           |
 | `Tab`     | Cycle the views (Library / … / Queue)                   |
 | `↑` / `↓` | Move the selection (also `k` / `j`)                     |
 | `1`-`5`   | Jump straight to a view                                 |
@@ -203,6 +205,24 @@ The download runs in the background and the track shows a live
 `DL  42%` badge at the end of its row, in whichever view it appears.
 Several downloads can run at once; the badge disappears when the file
 lands (the percentage sits at 100% while the mp3 is being converted).
+
+A download does not outlive the interface: quitting with `Q`, running
+`music stop` or killing the `tmux` session takes the running `yt-dlp`
+with it. If that happens after the file was already written, the track
+would be left calling itself a stream with its mp3 sitting in
+`music_path` — so the next launch links the two back up and says how
+many it fixed, and pressing `D` on such a track links it instead of
+downloading it twice.
+
+### Getting the files out
+
+With a track selected, `y` shows its path and copies it to the
+clipboard (via `wl-clipboard`, `xclip` or `xsel`), ready to paste into
+a `cp` or a file manager. On a stream it copies the URL instead.
+
+`C` copies the file itself: type a destination directory — or a full
+path if you want to rename it — and the copy runs in the background.
+It never overwrites a file that is already there.
 
 ## Troubleshooting
 
