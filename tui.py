@@ -13,6 +13,7 @@ status stay live even when the user is idle.
 
 import curses
 import os
+import subprocess
 import threading
 import time
 
@@ -23,6 +24,27 @@ from downloader import DownloaderError
 VIEW_LIBRARY, VIEW_PLAYLISTS, VIEW_SEARCH, VIEW_HISTORY, VIEW_QUEUE = range(5)
 VIEW_NAMES = ["Library", "Playlists", "Search", "History", "Queue"]
 VIEW_COUNT = len(VIEW_NAMES)
+
+# Clipboard tools, tried in order; the first one that works wins.
+CLIPBOARD_COMMANDS = [
+    ["wl-copy"],                              # wayland
+    ["xclip", "-selection", "clipboard"],     # x11
+    ["xsel", "--clipboard", "--input"],
+]
+
+
+def copy_to_clipboard(text):
+    """Put ``text`` on the system clipboard; False if no tool worked."""
+    for command in CLIPBOARD_COMMANDS:
+        try:
+            done = subprocess.run(command, input=text, text=True,
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if done.returncode == 0:
+            return True
+    return False
 
 
 def fmt_time(seconds):
@@ -262,8 +284,8 @@ class TUI:
                          curses.color_pair(4))
         hints1 = (" Space play/pause  n/p next/prev  +/- volume  "
                   "Enter play  Tab/1-5 view")
-        hints2 = (" a add  d del  A playlist  D download  m mark  "
-                  "M loop-marked  c clear  l/L loop  s shuffle  q/Q quit")
+        hints2 = (" a add  d del  A playlist  D dl  y path  m mark  "
+                  "M loop-set  c clear  l/L loop  s shuffle  q/Q quit")
         self._addstr(h - 2, 0, hints1.ljust(w - 1), curses.color_pair(1))
         self._addstr(h - 1, 0, hints2.ljust(w - 1), curses.color_pair(1))
         vol = self._status.get("volume")
@@ -409,6 +431,8 @@ class TUI:
             self._play_marked()
         elif key == ord("c"):
             self._clear_marks()
+        elif key == ord("y"):
+            self._yank_path()
         elif key == ord("a"):
             self._add_track()
         elif key == ord("d"):
@@ -424,7 +448,7 @@ class TUI:
             self.search_active = True
         elif key == ord("?"):
             self._notify(
-                "Keys: Space n p +/- l L s m M c a d A D Enter Tab 1-5 q Q")
+                "Keys: Space n p +/- l L s m M c y a d A D Enter Tab 1-5 q Q")
         elif key == ord("q"):
             self.running = False
         elif key == ord("Q"):
@@ -592,6 +616,18 @@ class TUI:
             title = os.path.splitext(os.path.basename(path))[0]
             self.lib.add_track(title, path, "local")
             self._notify("Added: " + title)
+
+    def _yank_path(self):
+        """Show the selected track's path (or URL) and copy it."""
+        track = self._selected_track()
+        if not track:
+            self._notify("No track selected")
+            return
+        value = track["url_or_path"]
+        if copy_to_clipboard(value):
+            self._notify("Copied: " + value)
+        else:
+            self._notify(value + "   (no clipboard tool - install wl-clipboard)")
 
     def _find_track(self, url_or_path):
         """Return the library track holding this URL or path, if any."""
